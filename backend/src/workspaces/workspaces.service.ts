@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateWorkspaceDto } from './dto/workspace.dto';
 
@@ -34,6 +34,25 @@ export class WorkspacesService {
         owner: {
           select: { id: true, email: true },
         },
+      },
+    });
+  }
+
+  async inviteUser(ownerId: string, workspaceId: string, email: string) {
+    const workspace = await this.prisma.workspace.findUnique({ where: { id: workspaceId } });
+    
+    if (!workspace || workspace.ownerId !== ownerId) {
+      throw new ForbiddenException('Only the workspace owner can invite members');
+    }
+
+    const userToInvite = await this.prisma.user.findUnique({ where: { email } });
+    if (!userToInvite) throw new NotFoundException('User with this email not found');
+
+    return this.prisma.workspaceMember.create({
+      data: {
+        workspaceId,
+        userId: userToInvite.id,
+        role: 'MEMBER',
       },
     });
   }
