@@ -1,12 +1,13 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { TaskStatus, TaskPriority } from '@prisma/client';
+import { TasksGateway } from './tasks.gateway';
 
 @Injectable()
 export class TasksService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private tasksGateway: TasksGateway,) {}
 
   async create(userId: string, dto: CreateTaskDto) {
     await this.checkProjectAccess(userId, dto.projectId);
@@ -65,10 +66,14 @@ export class TasksService {
       });
     }
 
-    return this.prisma.task.update({
+    const updatedTask = await this.prisma.task.update({
       where: { id: taskId },
       data: dto,
     });
+
+    this.tasksGateway.server.to(task.projectId).emit('taskUpdated', updatedTask);
+
+    return updatedTask;
   }
 
   private async checkProjectAccess(userId: string, projectId: string) {
