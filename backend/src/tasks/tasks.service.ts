@@ -29,11 +29,15 @@ export class TasksService {
     projectId: string, 
     status?: TaskStatus, 
     assigneeId?: string, 
-    priority?: TaskPriority
+    priority?: TaskPriority,
+    skip?: string,
+    take?: string,
   ) {
     await this.checkProjectAccess(userId, projectId);
 
     return this.prisma.task.findMany({
+      skip: skip ? parseInt(skip, 10) : 0,
+      take: take ? parseInt(take, 10) : 10,
       where: {
         projectId,
         ...(status && { status }),

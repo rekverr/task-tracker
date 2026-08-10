@@ -23,9 +23,11 @@ export class TasksController {
     @Query('status') status?: TaskStatus,
     @Query('assigneeId') assigneeId?: string,
     @Query('priority') priority?: TaskPriority,
+    @Query('skip') skip?: string,
+    @Query('take') take?: string,
   ) {
-    return this.tasksService.findAll(user.id, projectId, status, assigneeId, priority);
-  }
+    return this.tasksService.findAll(user.id, projectId, status, assigneeId, priority, skip, take)
+}
 
   @Patch(':id')
   update(
