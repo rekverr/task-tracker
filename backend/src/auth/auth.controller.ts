@@ -1,6 +1,7 @@
 import { Controller, Post, Body } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto, LoginDto, RefreshDto } from './dto/auth.dto';
+import { CurrentUser } from './decorators/current-user.decorator';
 
 @Controller('auth')
 export class AuthController {
@@ -18,6 +19,11 @@ export class AuthController {
 
   @Post('refresh')
   refresh(@Body() dto: RefreshDto) {
-  return this.authService.refresh(dto.refreshToken);
-}
+    return this.authService.refresh(dto.refreshToken);
+  }
+
+  @Post('logout')
+  logout(@CurrentUser() user: { id: string }) {
+    return this.authService.logout(user.id);
+  }
 }
