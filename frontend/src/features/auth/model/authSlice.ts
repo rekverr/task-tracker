@@ -1,14 +1,28 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
-import { type User } from "../../types";
+import type { User } from "../../../shared/types";
 
 interface AuthState {
   isAuthenticated: boolean;
   user: User | null;
 }
 
+function userFromToken(): User | null {
+  try {
+    const token = localStorage.getItem("accessToken");
+    if (!token) return null;
+    const payload = JSON.parse(atob(token.split(".")[1])) as {
+      sub: string;
+      email: string;
+    };
+    return { id: payload.sub, email: payload.email };
+  } catch {
+    return null;
+  }
+}
+
 const initialState: AuthState = {
-  isAuthenticated: !!localStorage.getItem("accessToken"),
-  user: null,
+  isAuthenticated: Boolean(userFromToken()),
+  user: userFromToken(),
 };
 
 const authSlice = createSlice({
