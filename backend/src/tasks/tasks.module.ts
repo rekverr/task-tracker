@@ -1,10 +1,13 @@
 import { Module } from '@nestjs/common';
-import { TasksService } from './tasks.service';
+import { JwtModule } from '@nestjs/jwt';
+import { TasksRepository } from './repositories/tasks.repository';
 import { TasksController } from './tasks.controller';
 import { TasksGateway } from './tasks.gateway';
+import { TasksService } from './tasks.service';
 
 @Module({
-  providers: [TasksService, TasksGateway],
-  controllers: [TasksController]
+  imports: [JwtModule.register({})],
+  providers: [TasksService, TasksGateway, TasksRepository],
+  controllers: [TasksController],
 })
 export class TasksModule {}

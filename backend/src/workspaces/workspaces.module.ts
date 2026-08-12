@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
-import { WorkspacesService } from './workspaces.service';
+import { WorkspacesRepository } from './repositories/workspaces.repository';
 import { WorkspacesController } from './workspaces.controller';
+import { WorkspacesService } from './workspaces.service';
 
 @Module({
-  providers: [WorkspacesService],
-  controllers: [WorkspacesController]
+  providers: [WorkspacesService, WorkspacesRepository],
+  controllers: [WorkspacesController],
 })
 export class WorkspacesModule {}

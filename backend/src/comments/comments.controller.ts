@@ -1,9 +1,22 @@
-import { Controller, Post, Get, Body, Param, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { CommentsService } from './comments.service';
-import { CreateCommentDto } from './dto/create-comment.dto';
+import { CreateCommentDto, UpdateCommentDto } from './dto/create-comment.dto';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
+@ApiTags('comments')
+@ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('comments')
 export class CommentsController {
@@ -15,7 +28,25 @@ export class CommentsController {
   }
 
   @Get('task/:taskId')
-  findByTask(@Param('taskId') taskId: string) {
-    return this.commentsService.findByTask(taskId);
+  findByTask(
+    @CurrentUser() user: { id: string },
+    @Param('taskId') taskId: string,
+  ) {
+    return this.commentsService.findByTask(user.id, taskId);
+  }
+
+  @Patch(':id')
+  update(
+    @CurrentUser() user: { id: string },
+    @Param('id') id: string,
+    @Body() dto: UpdateCommentDto,
+  ) {
+    return this.commentsService.update(user.id, id, dto);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  remove(@CurrentUser() user: { id: string }, @Param('id') id: string) {
+    return this.commentsService.remove(user.id, id);
   }
 }

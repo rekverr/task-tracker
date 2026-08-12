@@ -1,9 +1,26 @@
-import { Controller, Post, Get, Body, UseGuards, Param } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { WorkspacesService } from './workspaces.service';
-import { CreateWorkspaceDto } from './dto/workspace.dto';
+import {
+  CreateWorkspaceDto,
+  InviteWorkspaceMemberDto,
+  UpdateWorkspaceDto,
+} from './dto/workspace.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
+@ApiTags('workspaces')
+@ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('workspaces')
 export class WorkspacesController {
@@ -19,12 +36,48 @@ export class WorkspacesController {
     return this.workspacesService.findAllForUser(user.id);
   }
 
+  @Get(':id')
+  findOne(
+    @CurrentUser() user: { id: string },
+    @Param('id') workspaceId: string,
+  ) {
+    return this.workspacesService.findOne(user.id, workspaceId);
+  }
+
+  @Patch(':id')
+  update(
+    @CurrentUser() user: { id: string },
+    @Param('id') workspaceId: string,
+    @Body() dto: UpdateWorkspaceDto,
+  ) {
+    return this.workspacesService.update(user.id, workspaceId, dto);
+  }
+
   @Post(':id/invite')
   invite(
     @CurrentUser() user: { id: string },
     @Param('id') workspaceId: string,
-    @Body('email') email: string,
+    @Body() dto: InviteWorkspaceMemberDto,
   ) {
-    return this.workspacesService.inviteUser(user.id, workspaceId, email);
+    return this.workspacesService.inviteUser(user.id, workspaceId, dto.email);
+  }
+
+  @Delete(':id/members/:memberId')
+  @HttpCode(204)
+  removeMember(
+    @CurrentUser() user: { id: string },
+    @Param('id') workspaceId: string,
+    @Param('memberId') memberId: string,
+  ) {
+    return this.workspacesService.removeMember(user.id, workspaceId, memberId);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  remove(
+    @CurrentUser() user: { id: string },
+    @Param('id') workspaceId: string,
+  ) {
+    return this.workspacesService.remove(user.id, workspaceId);
   }
 }

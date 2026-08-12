@@ -1,4 +1,9 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import { RegisterDto, LoginDto } from './dto/auth.dto';
@@ -12,17 +17,30 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto) {
-    const hashedPassword = await bcrypt.hash(dto.password, 10);
-    const user = await this.prisma.user.create({
-      data: { email: dto.email, password: hashedPassword },
-    });
+    let user;
+    try {
+      const hashedPassword = await bcrypt.hash(dto.password, 12);
+      user = await this.prisma.user.create({
+        data: { email: dto.email.toLowerCase(), password: hashedPassword },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException('A user with this email already exists');
+      }
+      throw error;
+    }
     const tokens = await this.generateTokens(user.id, user.email);
     await this.updateRefreshToken(user.id, tokens.refreshToken);
     return { user: { id: user.id, email: user.email }, ...tokens };
   }
 
   async login(dto: LoginDto) {
-    const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email.toLowerCase() },
+    });
     if (!user || !(await bcrypt.compare(dto.password, user.password))) {
       throw new UnauthorizedException('Invalid credentials');
     }
@@ -33,16 +51,22 @@ export class AuthService {
 
   async refresh(refreshToken: string) {
     try {
-      const payload = await this.jwtService.verifyAsync(refreshToken, {
-        secret: process.env.JWT_REFRESH_SECRET,
+      const payload = await this.jwtService.verifyAsync<{ sub: string }>(
+        refreshToken,
+        { secret: process.env.JWT_REFRESH_SECRET },
+      );
+
+      const user = await this.prisma.user.findUnique({
+        where: { id: payload.sub },
       });
-      
-      const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
       if (!user || !user.hashedRefreshToken) {
         throw new UnauthorizedException('Access denied');
       }
 
-      const refreshTokenMatches = await bcrypt.compare(refreshToken, user.hashedRefreshToken);
+      const refreshTokenMatches = await bcrypt.compare(
+        refreshToken,
+        user.hashedRefreshToken,
+      );
       if (!refreshTokenMatches) {
         throw new UnauthorizedException('Access denied');
       }
@@ -50,7 +74,7 @@ export class AuthService {
       const tokens = await this.generateTokens(user.id, user.email);
       await this.updateRefreshToken(user.id, tokens.refreshToken);
       return tokens;
-    } catch (e) {
+    } catch {
       throw new UnauthorizedException('Invalid refresh token');
     }
   }

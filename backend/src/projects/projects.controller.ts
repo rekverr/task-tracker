@@ -1,9 +1,22 @@
-import { Controller, Post, Get, Body, Param, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { ProjectsService } from './projects.service';
-import { CreateProjectDto } from './dto/project.dto';
+import { CreateProjectDto, UpdateProjectDto } from './dto/project.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('projects')
+@ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('projects')
 export class ProjectsController {
@@ -20,5 +33,25 @@ export class ProjectsController {
     @Param('workspaceId') workspaceId: string,
   ) {
     return this.projectsService.findAllByWorkspace(user.id, workspaceId);
+  }
+
+  @Get(':id')
+  findOne(@CurrentUser() user: { id: string }, @Param('id') projectId: string) {
+    return this.projectsService.findOne(user.id, projectId);
+  }
+
+  @Patch(':id')
+  update(
+    @CurrentUser() user: { id: string },
+    @Param('id') projectId: string,
+    @Body() dto: UpdateProjectDto,
+  ) {
+    return this.projectsService.update(user.id, projectId, dto);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  remove(@CurrentUser() user: { id: string }, @Param('id') projectId: string) {
+    return this.projectsService.remove(user.id, projectId);
   }
 }

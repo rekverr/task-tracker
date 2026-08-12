@@ -30,8 +30,12 @@ describe('Critical Flow (e2e)', () => {
   });
 
   afterAll(async () => {
-    await prisma.user.deleteMany({ where: { email: testUser.email } });
-    await app.close();
+    if (prisma) {
+      await prisma.user.deleteMany({ where: { email: testUser.email } });
+    }
+    if (app) {
+      await app.close();
+    }
   });
 
   it('/auth/register (POST) - should register user and return tokens', async () => {

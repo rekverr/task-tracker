@@ -1,102 +1,156 @@
-import { Injectable, NotFoundException, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { PaginatedResponseDto } from '../common/dto/paginated-response.dto';
+import { MembershipRepository } from '../common/repositories/membership.repository';
 import { CreateTaskDto } from './dto/create-task.dto';
+import { TaskQueryDto } from './dto/task-query.dto';
+import {
+  TaskHistoryResponseDto,
+  TaskResponseDto,
+} from './dto/task-response.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
-import { TaskStatus, TaskPriority } from '@prisma/client';
+import { TasksRepository } from './repositories/tasks.repository';
 import { TasksGateway } from './tasks.gateway';
 
 @Injectable()
 export class TasksService {
-  constructor(private prisma: PrismaService, private tasksGateway: TasksGateway,) {}
+  constructor(
+    private readonly tasksRepository: TasksRepository,
+    private readonly membershipRepository: MembershipRepository,
+    private readonly tasksGateway: TasksGateway,
+  ) {}
 
   async create(userId: string, dto: CreateTaskDto) {
     await this.checkProjectAccess(userId, dto.projectId);
+    await this.ensureAssigneeInProject(dto.assigneeId, dto.projectId);
 
-    return this.prisma.task.create({
-      data: {
-        title: dto.title,
-        description: dto.description,
-        priority: dto.priority,
-        deadline: dto.deadline ? new Date(dto.deadline) : null,
-        projectId: dto.projectId,
-        assigneeId: dto.assigneeId,
-      },
+    const task = await this.tasksRepository.create({
+      title: dto.title,
+      description: dto.description,
+      priority: dto.priority,
+      deadline: dto.deadline ? new Date(dto.deadline) : null,
+      projectId: dto.projectId,
+      assigneeId: dto.assigneeId,
     });
+
+    const response = TaskResponseDto.from(task);
+    this.tasksGateway.emitTaskCreated(dto.projectId, response);
+    return response;
   }
 
-  async findAll(
-    userId: string, 
-    projectId: string, 
-    status?: TaskStatus, 
-    assigneeId?: string, 
-    priority?: TaskPriority,
-    skip?: string,
-    take?: string,
-  ) {
+  async findAll(userId: string, projectId: string, query: TaskQueryDto) {
     await this.checkProjectAccess(userId, projectId);
 
-    return this.prisma.task.findMany({
-      skip: skip ? parseInt(skip, 10) : 0,
-      take: take ? parseInt(take, 10) : 10,
-      where: {
-        projectId,
-        ...(status && { status }),
-        ...(assigneeId && { assigneeId }),
-        ...(priority && { priority }),
-      },
-      orderBy: { createdAt: 'desc' },
-      include: { assignee: { select: { id: true, email: true } } }
+    const page = { skip: query.skip ?? 0, take: query.take ?? 10 };
+    const where: Prisma.TaskWhereInput = {
+      projectId,
+      ...(query.status && { status: query.status }),
+      ...(query.assigneeId && { assigneeId: query.assigneeId }),
+      ...(query.priority && { priority: query.priority }),
+    };
+
+    const [items, total] = await this.tasksRepository.findManyWithCount({
+      where,
+      ...page,
     });
+
+    return PaginatedResponseDto.of(
+      items.map((item) => TaskResponseDto.from(item)),
+      { total, skip: page.skip, take: page.take },
+    );
   }
 
   async update(userId: string, taskId: string, dto: UpdateTaskDto) {
-    const task = await this.prisma.task.findUnique({
-      where: { id: taskId },
-      include: { project: true },
-    });
-
+    const task = await this.tasksRepository.findByIdWithProject(taskId);
     if (!task) throw new NotFoundException('Task not found');
-    
+
     await this.checkProjectAccess(userId, task.projectId);
+    await this.ensureAssigneeInProject(dto.assigneeId, task.projectId);
 
-    if (dto.status && dto.status !== task.status) {
-      await this.prisma.taskHistory.create({
-        data: {
-          taskId: task.id,
-          userId: userId,
-          oldStatus: task.status,
-          newStatus: dto.status,
-        }
-      });
-    }
-
-    const updatedTask = await this.prisma.task.update({
-      where: { id: taskId },
-      data: dto,
+    const { deadline, ...taskData } = dto;
+    const updatedTask = await this.tasksRepository.runTransaction(async (tx) => {
+      if (dto.status && dto.status !== task.status) {
+        await this.tasksRepository.createHistory(
+          {
+            taskId: task.id,
+            userId,
+            oldStatus: task.status,
+            newStatus: dto.status,
+          },
+          tx,
+        );
+      }
+      return this.tasksRepository.update(
+        taskId,
+        {
+          ...taskData,
+          ...(deadline !== undefined && {
+            deadline: deadline ? new Date(deadline) : null,
+          }),
+        },
+        tx,
+      );
     });
 
-    this.tasksGateway.server.to(task.projectId).emit('taskUpdated', updatedTask);
+    const response = TaskResponseDto.from(updatedTask);
+    this.tasksGateway.emitTaskUpdated(task.projectId, response);
+    return response;
+  }
 
-    return updatedTask;
+  async remove(userId: string, taskId: string) {
+    const task = await this.findTaskWithProject(taskId);
+    await this.checkProjectAccess(userId, task.projectId);
+    await this.tasksRepository.delete(taskId);
+    this.tasksGateway.emitTaskDeleted(task.projectId, taskId);
+  }
+
+  async findHistory(userId: string, taskId: string) {
+    const task = await this.findTaskWithProject(taskId);
+    await this.checkProjectAccess(userId, task.projectId);
+    const history = await this.tasksRepository.findHistory(taskId);
+    return history.map((entry) => TaskHistoryResponseDto.from(entry));
   }
 
   private async checkProjectAccess(userId: string, projectId: string) {
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
-      include: { workspace: true },
-    });
-
+    const project =
+      await this.membershipRepository.findProjectWorkspace(projectId);
     if (!project) throw new NotFoundException('Project not found');
 
-    const membership = await this.prisma.workspaceMember.findUnique({
-      where: {
-        workspaceId_userId: {
-          workspaceId: project.workspaceId,
-          userId: userId,
-        },
-      },
-    });
+    const membership = await this.membershipRepository.findMembership(
+      project.workspaceId,
+      userId,
+    );
+    if (!membership)
+      throw new ForbiddenException('Access denied to this project');
+  }
 
-    if (!membership) throw new ForbiddenException('Access denied to this project');
+  private async findTaskWithProject(taskId: string) {
+    const task = await this.tasksRepository.findById(taskId);
+    if (!task) throw new NotFoundException('Task not found');
+    return task;
+  }
+
+  private async ensureAssigneeInProject(
+    assigneeId: string | undefined,
+    projectId: string,
+  ) {
+    if (!assigneeId) return;
+    const project =
+      await this.membershipRepository.findProjectWorkspace(projectId);
+    if (!project) throw new NotFoundException('Project not found');
+
+    const membership = await this.membershipRepository.findMembership(
+      project.workspaceId,
+      assigneeId,
+    );
+    if (!membership)
+      throw new BadRequestException(
+        'Assignee must be a member of the project workspace',
+      );
   }
 }

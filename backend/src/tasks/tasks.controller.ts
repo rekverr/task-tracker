@@ -1,11 +1,25 @@
-import { Controller, Post, Get, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { TasksService } from './tasks.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { TaskStatus, TaskPriority } from '@prisma/client';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { TaskQueryDto } from './dto/task-query.dto';
 
+@ApiTags('tasks')
+@ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('tasks')
 export class TasksController {
@@ -20,14 +34,10 @@ export class TasksController {
   findAll(
     @CurrentUser() user: { id: string },
     @Param('projectId') projectId: string,
-    @Query('status') status?: TaskStatus,
-    @Query('assigneeId') assigneeId?: string,
-    @Query('priority') priority?: TaskPriority,
-    @Query('skip') skip?: string,
-    @Query('take') take?: string,
+    @Query() query: TaskQueryDto,
   ) {
-    return this.tasksService.findAll(user.id, projectId, status, assigneeId, priority, skip, take)
-}
+    return this.tasksService.findAll(user.id, projectId, query);
+  }
 
   @Patch(':id')
   update(
@@ -36,5 +46,16 @@ export class TasksController {
     @Body() dto: UpdateTaskDto,
   ) {
     return this.tasksService.update(user.id, id, dto);
+  }
+
+  @Get(':id/history')
+  findHistory(@CurrentUser() user: { id: string }, @Param('id') id: string) {
+    return this.tasksService.findHistory(user.id, id);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  remove(@CurrentUser() user: { id: string }, @Param('id') id: string) {
+    return this.tasksService.remove(user.id, id);
   }
 }
